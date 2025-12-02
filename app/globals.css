@@ -1,0 +1,29 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  touch-action: none;
+  user-select: none;
+}
+
+html {
+  background-color: black;
+  color: white;
+}
+
+button,
+a {
+  cursor: pointer;
+}
+
+@theme {
+  --spacing-safe-bottom: var(--safe-inset-bottom, 0px);
+  --color-ff-green: #09e323;
+  --color-ff-yellow: #ffb800;
+  --color-ff-red: #fb3640;
+}
