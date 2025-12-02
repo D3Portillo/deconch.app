@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { pipeline } from "@xenova/transformers"
+import { formatTranscript } from "@/app/actions/format-transcript"
 
 export default function Home() {
   const [isRecording, setIsRecording] = useState(false)
@@ -86,7 +87,8 @@ export default function Home() {
       const faster = speedUpFloat32(channel, 1.44)
 
       const result = await transcriberRef.current(faster)
-      setTranscript(result.text)
+      const formatted = await formatTranscript(result.text)
+      setTranscript(formatted)
     } catch (error) {
       console.error({ error })
       setTranscript("Error transcribing")
