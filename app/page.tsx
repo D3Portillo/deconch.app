@@ -13,7 +13,6 @@ export default function Home() {
   const transcriberRef = useRef<any>(null)
 
   useEffect(() => {
-    // Load Whisper model on mount
     pipeline("automatic-speech-recognition", "Xenova/whisper-tiny.en").then(
       (transcriber) => {
         transcriberRef.current = transcriber
@@ -24,26 +23,29 @@ export default function Home() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm;codecs=opus",
+      })
+
       mediaRecorderRef.current = mediaRecorder
       audioChunksRef.current = []
 
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data)
+      mediaRecorder.ondataavailable = (e) => {
+        audioChunksRef.current.push(e.data)
       }
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/wav",
-        })
-        stream.getTracks().forEach((track) => track.stop())
-        await transcribeAudio(audioBlob)
+        stream.getTracks().forEach((t) => t.stop())
+        await transcribeAudio(
+          new Blob(audioChunksRef.current, { type: "audio/webm" })
+        )
       }
 
       mediaRecorder.start()
       setIsRecording(true)
     } catch (err) {
-      console.error("Error accessing microphone:", err)
+      console.error(err)
     }
   }
 
@@ -54,25 +56,42 @@ export default function Home() {
     }
   }
 
-  const transcribeAudio = async (audioBlob: Blob) => {
+  // Speeds up a Float32Array by a given factor
+  const speedUpFloat32 = (input: Float32Array, f: number) => {
+    const floor = Math.floor
+    const len = floor(input.length / f)
+    const res = new Float32Array(len)
+
+    for (let i = 0; i < len; i++) res[i] = input[floor(i * f)]
+    return res
+  }
+
+  const transcribeAudio = async (blob: Blob) => {
     if (!transcriberRef.current) {
-      setTranscript("Model still loading...")
+      setTranscript("Model loading…")
       return
     }
 
     setIsLoading(true)
-    try {
-      const arrayBuffer = await audioBlob.arrayBuffer()
-      const audioContext = new AudioContext({ sampleRate: 16000 })
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
-      const audioData = audioBuffer.getChannelData(0)
 
-      const result = await transcriberRef.current(audioData)
+    try {
+      const arrayBuffer = await blob.arrayBuffer()
+
+      // Decode directly to 16 kHz context
+      const audioContext = new AudioContext({ sampleRate: 16000 })
+      const decoded = await audioContext.decodeAudioData(arrayBuffer)
+      const channel = decoded.getChannelData(0)
+
+      // Optimize 1.44× speed
+      const faster = speedUpFloat32(channel, 1.44)
+
+      const result = await transcriberRef.current(faster)
       setTranscript(result.text)
-    } catch (err) {
-      console.error("Transcription error:", err)
-      setTranscript("Error transcribing audio")
+    } catch (error) {
+      console.error({ error })
+      setTranscript("Error transcribing")
     }
+
     setIsLoading(false)
   }
 
@@ -101,11 +120,9 @@ export default function Home() {
             <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
           )}
           <div
-            className={`
-            w-20 h-20 rounded-full bg-white/90
-            transition-all duration-300
-            ${isRecording ? "scale-75" : "scale-100"}
-          `}
+            className={`w-20 h-20 rounded-full bg-white/90 transition-all duration-300 ${
+              isRecording ? "scale-75" : "scale-100"
+            }`}
           />
         </button>
 
@@ -113,9 +130,7 @@ export default function Home() {
           <p className="text-sm text-gray-600 mb-2">
             {isRecording ? "🎤 Recording..." : "Press and hold to speak"}
           </p>
-          {isLoading && (
-            <p className="text-sm text-gray-500">Transcribing...</p>
-          )}
+          {isLoading && <p className="text-sm text-gray-500">Transcribing…</p>}
         </div>
 
         {transcript && (
