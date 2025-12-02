@@ -1,25 +1,17 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { pipeline } from "@xenova/transformers"
-import { formatTranscript } from "@/app/actions/format-transcript"
+import { useRef, useState } from "react"
+import { transcribeAudio } from "@/app/actions/transcribe"
+import { generateSpeech } from "@/app/actions/generate-speech"
 
 export default function Home() {
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState("")
+  const [answer, setAnswer] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const transcriberRef = useRef<any>(null)
-
-  useEffect(() => {
-    pipeline("automatic-speech-recognition", "Xenova/whisper-tiny.en").then(
-      (transcriber) => {
-        transcriberRef.current = transcriber
-      }
-    )
-  }, [])
+  const recorder = useRef<MediaRecorder | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const startRecording = async () => {
     try {
@@ -29,66 +21,56 @@ export default function Home() {
         mimeType: "audio/webm;codecs=opus",
       })
 
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
+      const audioChunks: Array<Blob> = []
 
       mediaRecorder.ondataavailable = (e) => {
-        audioChunksRef.current.push(e.data)
+        audioChunks.push(e.data)
       }
 
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop())
-        await transcribeAudio(
-          new Blob(audioChunksRef.current, { type: "audio/webm" })
+        await handleTranscription(
+          new File(audioChunks, "audio.webm", { type: "audio/webm" })
         )
       }
 
       mediaRecorder.start()
       setIsRecording(true)
+
+      recorder.current = mediaRecorder
     } catch (err) {
       console.error(err)
     }
   }
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
+    if (recorder.current && isRecording) {
+      recorder.current.stop()
       setIsRecording(false)
     }
   }
 
-  // Speeds up a Float32Array by a given factor
-  const speedUpFloat32 = (input: Float32Array, f: number) => {
-    const floor = Math.floor
-    const len = floor(input.length / f)
-    const res = new Float32Array(len)
-
-    for (let i = 0; i < len; i++) res[i] = input[floor(i * f)]
-    return res
-  }
-
-  const transcribeAudio = async (blob: Blob) => {
-    if (!transcriberRef.current) {
-      setTranscript("Model loading…")
-      return
-    }
-
+  const handleTranscription = async (file: File) => {
     setIsLoading(true)
 
     try {
-      const arrayBuffer = await blob.arrayBuffer()
+      const transcriptText = await transcribeAudio(file)
+      setTranscript(transcriptText)
 
-      // Decode directly to 16 kHz context
-      const audioContext = new AudioContext({ sampleRate: 16000 })
-      const decoded = await audioContext.decodeAudioData(arrayBuffer)
-      const channel = decoded.getChannelData(0)
+      // Random YES/NO
+      const response = Math.random() > 0.5 ? "YES" : "NO"
 
-      // Optimize 1.44× speed
-      const faster = speedUpFloat32(channel, 1.44)
+      setAnswer(response)
 
-      const result = await transcriberRef.current(faster)
-      const formatted = await formatTranscript(result.text)
-      setTranscript(formatted)
+      // Generate speech
+      const audioBuffer = await generateSpeech(response)
+      const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" })
+      const audioUrl = URL.createObjectURL(audioBlob)
+
+      if (audioRef.current) {
+        audioRef.current.src = audioUrl
+        audioRef.current.play()
+      }
     } catch (error) {
       console.error({ error })
       setTranscript("Error transcribing")
@@ -110,8 +92,8 @@ export default function Home() {
             transition-all duration-300 ease-out
             ${
               isRecording
-                ? "bg-linear-to-br from-dc-blue via-purple-500 to-dc-pink scale-110 shadow-2xl"
-                : "bg-linear-to-br from-dc-blue via-purple-600 to-dc-pink hover:scale-105 shadow-lg"
+                ? "bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 scale-110 shadow-2xl"
+                : "bg-gradient-to-br from-blue-500 via-purple-600 to-pink-600 hover:scale-105 shadow-lg"
             }
             active:scale-95
             flex items-center justify-center
@@ -136,13 +118,26 @@ export default function Home() {
         </div>
 
         {transcript && (
-          <div className="max-w-md p-4 bg-white rounded-lg shadow-md border border-gray-200">
-            <p className="text-sm font-medium text-gray-700 mb-2">
-              Transcript:
-            </p>
-            <p className="text-gray-900">{transcript}</p>
+          <div className="max-w-md w-full space-y-4">
+            <div className="p-4 bg-white rounded-lg shadow-md border border-gray-200">
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                You asked:
+              </p>
+              <p className="text-gray-900">{transcript}</p>
+            </div>
+
+            {answer && (
+              <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg shadow-md border border-purple-200">
+                <p className="text-sm font-medium text-purple-700 mb-2">
+                  🐚 The Conch says:
+                </p>
+                <p className="text-lg font-bold text-purple-900">{answer}</p>
+              </div>
+            )}
           </div>
         )}
+
+        <audio ref={audioRef} className="hidden" />
       </div>
     </main>
   )

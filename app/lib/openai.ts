@@ -4,4 +4,5 @@ export const openai = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-export const GPT5Mini = openai("gpt-5-mini")
+export const GPT5Nano = openai("gpt-5-nano")
+export const GPT4Nano = openai("gpt-4.1-nano")
